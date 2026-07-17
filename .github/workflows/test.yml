@@ -5,8 +5,14 @@ on:
       app:
         required: true
         type: string
+      images:
+        required: true
+        type: string
 jobs:
   t:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
     steps:
-      - run: echo "app=${{ inputs.app }}"
+      - run: echo "suffix=${{ matrix.image.suffix }}"
