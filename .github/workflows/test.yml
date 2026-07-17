@@ -8,6 +8,9 @@ on:
       images:
         required: true
         type: string
+concurrency:
+  group: t-${{ inputs.app }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   t:
     runs-on: ubuntu-latest
