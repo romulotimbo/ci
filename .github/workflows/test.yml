@@ -15,10 +15,18 @@ concurrency:
   group: t-${{ inputs.app }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  t:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         image: ${{ fromJSON(inputs.images) }}
     steps:
       - run: echo "suffix=${{ matrix.image.suffix }} host_set=${{ secrets.VPS_HOST != '' }}"
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "deploy step"
