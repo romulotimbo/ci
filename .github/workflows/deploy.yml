@@ -30,6 +30,10 @@ on:
         description: "Nome de um service de migração no compose para rodar antes do up (vazio = pular)"
         default: ""
         type: string
+      services:
+        description: "Serviços a atualizar no pull/up (espaço-separado). Vazio = todos. Use para não tocar em serviços compartilhados (ex.: postgres)."
+        default: ""
+        type: string
     secrets:
       VPS_HOST:
         required: true
@@ -100,9 +104,9 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ inputs.deploy_dir }}"
-            docker compose -f "${{ inputs.compose_file }}" pull
+            docker compose -f "${{ inputs.compose_file }}" pull ${{ inputs.services }}
             if [ -n "${{ inputs.migrate_service }}" ]; then
               docker compose -f "${{ inputs.compose_file }}" run --rm "${{ inputs.migrate_service }}"
             fi
-            docker compose -f "${{ inputs.compose_file }}" up -d
+            docker compose -f "${{ inputs.compose_file }}" up -d ${{ inputs.services }}
             docker image prune -f

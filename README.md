@@ -37,6 +37,7 @@ jobs:
 | `deploy_dir` | sim | Caminho do projeto na VPS |
 | `compose_file` | não | Padrão `docker-compose.prod.yml` |
 | `migrate_service` | não | Service de migração a rodar antes do `up` |
+| `services` | não | Limita `pull`/`up` a serviços específicos (evita tocar em compartilhados, ex.: `postgres`) |
 
 ### Secrets (por repositório)
 
