@@ -8,6 +8,9 @@ on:
       images:
         required: true
         type: string
+    secrets:
+      VPS_HOST:
+        required: true
 concurrency:
   group: t-${{ inputs.app }}-${{ github.ref }}
   cancel-in-progress: true
@@ -18,4 +21,4 @@ jobs:
       matrix:
         image: ${{ fromJSON(inputs.images) }}
     steps:
-      - run: echo "suffix=${{ matrix.image.suffix }}"
+      - run: echo "suffix=${{ matrix.image.suffix }} host_set=${{ secrets.VPS_HOST != '' }}"
