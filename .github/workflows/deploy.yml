@@ -2,7 +2,8 @@ name: build-and-deploy (reusable)
 
 # Workflow reutilizável central (romulotimbo/ci).
 # Cada projeto o chama via `uses:` passando poucos parâmetros.
-# Fluxo: build das imagens no runner -> push para GHCR -> deploy por SSH na VPS (só pull + up).
+# Fluxo: build das imagens no runner -> push para GHCR ->
+#        (opcional) rsync do código host -> deploy por SSH (pull + up).
 
 on:
   workflow_call:
@@ -34,6 +35,18 @@ on:
         description: "Serviços a atualizar no pull/up (espaço-separado). Vazio = todos. Use para não tocar em serviços compartilhados (ex.: postgres)."
         default: ""
         type: string
+      sync_host_code:
+        description: >-
+          Se true, faz rsync do checkout do caller para deploy_dir na VPS
+          (preserva .env, data*, .venv, logs; sem --delete).
+        type: boolean
+        default: false
+      pip_install:
+        description: >-
+          Após sync_host_code, roda .venv/bin/pip install -r requirements.txt
+          quando .venv e requirements.txt existirem.
+        type: boolean
+        default: true
     secrets:
       VPS_HOST:
         required: true
@@ -97,21 +110,62 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy por SSH (pull + up)
+      - name: Checkout caller repo
+        if: inputs.sync_host_code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for rsync
+        if: inputs.sync_host_code
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.VPS_PORT }}" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync host code (rsync)
+        if: inputs.sync_host_code
+        run: |
+          set -euo pipefail
+          RSYNC_SSH="ssh -i ~/.ssh/deploy_key -p ${{ secrets.VPS_PORT }} -o StrictHostKeyChecking=accept-new"
+          rsync -az --no-owner --no-group \
+            -e "$RSYNC_SSH" \
+            --exclude '.env' \
+            --exclude '.venv/' \
+            --exclude 'data/' \
+            --exclude 'data-*/' \
+            --exclude 'logs/' \
+            --exclude '__pycache__/' \
+            --exclude '.git/' \
+            ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ inputs.deploy_dir }}/"
+
+      - name: Deploy por SSH (host post-sync + pull + up)
         uses: appleboy/ssh-action@v1
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+          SYNC_HOST: ${{ inputs.sync_host_code }}
+          PIP_INSTALL: ${{ inputs.pip_install }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: "20m"
-          envs: GHCR_TOKEN
+          envs: GHCR_TOKEN,DEPLOY_SHA,SYNC_HOST,PIP_INSTALL
           script: |
             set -euo pipefail
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u romulotimbo --password-stdin
             cd "${{ inputs.deploy_dir }}"
+
+            if [ "${SYNC_HOST}" = "true" ]; then
+              printf '%s\n' "$DEPLOY_SHA" > DEPLOYED_SHA
+              echo "DEPLOYED_SHA=$(cat DEPLOYED_SHA)"
+              if [ "${PIP_INSTALL}" = "true" ] && [ -x .venv/bin/pip ] && [ -f requirements.txt ]; then
+                .venv/bin/pip install -r requirements.txt
+              fi
+            fi
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u romulotimbo --password-stdin
             docker compose -f "${{ inputs.compose_file }}" pull ${{ inputs.services }}
             if [ -n "${{ inputs.migrate_service }}" ]; then
               docker compose -f "${{ inputs.compose_file }}" run --rm "${{ inputs.migrate_service }}"
