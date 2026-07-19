@@ -43,6 +43,9 @@ on:
         required: true
       VPS_SSH_KEY:
         required: true
+      GHCR_TOKEN:
+        description: "PAT com read:packages (login na VPS antes do pull)"
+        required: true
 
 concurrency:
   group: deploy-${{ inputs.app }}-${{ github.ref }}
@@ -96,14 +99,18 @@ jobs:
     steps:
       - name: Deploy por SSH (pull + up)
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: "20m"
+          envs: GHCR_TOKEN
           script: |
             set -euo pipefail
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u romulotimbo --password-stdin
             cd "${{ inputs.deploy_dir }}"
             docker compose -f "${{ inputs.compose_file }}" pull ${{ inputs.services }}
             if [ -n "${{ inputs.migrate_service }}" ]; then
