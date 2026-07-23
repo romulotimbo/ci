@@ -166,9 +166,14 @@ jobs:
             fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u romulotimbo --password-stdin
-            docker compose -f "${{ inputs.compose_file }}" pull ${{ inputs.services }}
+            # Serviços com profiles: (ex. migrate) NÃO entram no `pull` padrão.
+            # Sem --profile tools a imagem -migrate fica velha, a app sobe com
+            # schema novo e o banco atrasado → Prisma P2022 / ERROR digest.
             if [ -n "${{ inputs.migrate_service }}" ]; then
+              docker compose -f "${{ inputs.compose_file }}" --profile tools pull ${{ inputs.services }} "${{ inputs.migrate_service }}"
               docker compose -f "${{ inputs.compose_file }}" run --rm "${{ inputs.migrate_service }}"
+            else
+              docker compose -f "${{ inputs.compose_file }}" pull ${{ inputs.services }}
             fi
             docker compose -f "${{ inputs.compose_file }}" up -d ${{ inputs.services }}
             docker image prune -f
