@@ -57,8 +57,8 @@ on:
       VPS_SSH_KEY:
         required: true
       GHCR_TOKEN:
-        description: "PAT com read:packages (login na VPS antes do pull)"
-        required: true
+        description: "Não usado no login. O pull autentica com GITHUB_TOKEN (packages: read). O segredo permanece opcional para não quebrar callers antigos."
+        required: false
 
 concurrency:
   group: deploy-${{ inputs.app }}-${{ github.ref }}
@@ -109,6 +109,13 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # O pull na VPS precisa ler o pacote. O PAT em GHCR_TOKEN expira
+    # (o login passa a responder "denied: denied") e o build já publica
+    # com o GITHUB_TOKEN deste repositório. O mesmo token, com
+    # packages: read, autentica o pull sem segredo de longa duração.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout caller repo
         if: inputs.sync_host_code
@@ -142,7 +149,8 @@ jobs:
       - name: Deploy por SSH (host post-sync + pull + up)
         uses: appleboy/ssh-action@v1
         env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
           DEPLOY_SHA: ${{ github.sha }}
           SYNC_HOST: ${{ inputs.sync_host_code }}
           PIP_INSTALL: ${{ inputs.pip_install }}
@@ -152,7 +160,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: "20m"
-          envs: GHCR_TOKEN,DEPLOY_SHA,SYNC_HOST,PIP_INSTALL
+          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA,SYNC_HOST,PIP_INSTALL
           script: |
             set -euo pipefail
             cd "${{ inputs.deploy_dir }}"
@@ -165,7 +173,7 @@ jobs:
               fi
             fi
 
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u romulotimbo --password-stdin
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             # Serviços com profiles: (ex. migrate) NÃO entram no `pull` padrão.
             # Sem --profile tools a imagem -migrate fica velha, a app sobe com
             # schema novo e o banco atrasado → Prisma P2022 / ERROR digest.
